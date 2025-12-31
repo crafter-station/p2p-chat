@@ -1,36 +1,149 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# P2P Chat
+
+A peer-to-peer messaging application where users can send messages directly to each other without the server accessing message content. The server only facilitates initial connection (signaling), after which all communication is direct between users via WebRTC DataChannels.
+
+## Features
+
+- **True P2P Messaging**: Messages go directly between peers, never through the server
+- **No Account Required**: Just create a room and share the link
+- **Real-time Communication**: Instant messaging via WebRTC DataChannels
+- **Connection Status**: Visual indicator showing connection state
+- **Privacy First**: Server only handles signaling, never sees message content
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16 (App Router), React 19, TypeScript |
+| Styling | Tailwind CSS v4 |
+| Signaling | Socket.io |
+| P2P | WebRTC DataChannels |
+| Package Manager | Bun |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- [Bun](https://bun.sh/) installed
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/crafter-station/p2p-chat.git
+   cd p2p-chat
+   ```
+
+2. **Install dependencies**
+   ```bash
+   # Frontend
+   bun install
+
+   # Signaling server
+   cd signaling && bun install
+   ```
+
+3. **Start the signaling server** (Terminal 1)
+   ```bash
+   cd signaling
+   bun dev
+   ```
+
+4. **Start the frontend** (Terminal 2)
+   ```bash
+   bun dev
+   ```
+
+5. **Open the app**
+   - Navigate to http://localhost:3000
+   - Create a room and share the link with another user
+
+### Environment Variables
+
+#### Frontend (.env.local)
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_SIGNALING_URL=http://localhost:3001
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+#### Signaling Server (.env)
+```bash
+PORT=3001
+FRONTEND_URL=http://localhost:3000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Frontend (Vercel)
 
-## Learn More
+1. Import repo to [Vercel](https://vercel.com)
+2. Set environment variable:
+   - `NEXT_PUBLIC_SIGNALING_URL` = your Railway signaling server URL
 
-To learn more about Next.js, take a look at the following resources:
+### Signaling Server (Railway)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Create new project on [Railway](https://railway.app)
+2. Set root directory to `signaling`
+3. Set environment variable:
+   - `FRONTEND_URL` = your Vercel frontend URL
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Architecture
 
-## Deploy on Vercel
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        FRONTEND                              │
+│                     (Next.js 16)                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │  Landing    │  │  Chat Room  │  │  WebRTC Hook        │  │
+│  │  Page       │  │  Component  │  │  (P2P Logic)        │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ WebSocket (signaling only)
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    SIGNALING SERVER                          │
+│                  (Socket.io + Bun)                          │
+│                                                              │
+│  • Room management (join/leave)                              │
+│  • SDP offer/answer relay                                    │
+│  • ICE candidate relay                                       │
+│  • NO message storage, NO logging of content                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ STUN (NAT traversal)
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    EXTERNAL SERVICES                         │
+│                                                              │
+│  • Google STUN servers (free)                                │
+│  • stun:stun.l.google.com:19302                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### WebRTC Flow
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. User creates/joins room via frontend
+2. Frontend connects to signaling server via WebSocket
+3. Signaling server relays SDP offers/answers and ICE candidates
+4. Once P2P connection established, all messages go directly between peers
+5. Signaling server never sees message content
+
+## Scripts
+
+```bash
+# Frontend
+bun dev          # Start development server
+bun build        # Production build
+bun start        # Start production server
+bun lint         # Check for linting errors
+bun format       # Format code
+
+# Signaling Server
+cd signaling
+bun dev          # Start development server
+bun run build    # Compile TypeScript
+```
+
+## License
+
+MIT
