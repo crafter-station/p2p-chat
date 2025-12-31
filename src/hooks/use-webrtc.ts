@@ -4,10 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 // ============ Types ============
+export interface Participant {
+  id: string;
+  name: string;
+}
+
 export interface Message {
   id: string;
   content: string;
-  sender: "me" | "peer";
+  senderId: string;
+  senderName: string;
   timestamp: Date;
 }
 
@@ -18,11 +24,20 @@ export type ConnectionState =
   | "signaling" // Exchanging SDP/ICE
   | "connected"; // P2P connection established
 
+// Message types sent over the data channel
+type DataChannelMessage =
+  | { type: "chat"; content: string; timestamp: string }
+  | { type: "user-info"; user: Participant }
+  | { type: "user-update"; user: Participant };
+
 interface UseWebRTCReturn {
   connectionState: ConnectionState;
   messages: Message[];
   sendMessage: (content: string) => void;
   error: string | null;
+  localUser: Participant;
+  peer: Participant | null;
+  updateLocalUserName: (name: string) => void;
 }
 
 // ============ Utilities ============
@@ -54,18 +69,63 @@ const DATA_CHANNEL_CONFIG: RTCDataChannelInit = {
   maxRetransmits: 10, // Retry failed messages
 };
 
+const LOCAL_STORAGE_KEY = "p2p-chat-user";
+
+// Default user for SSR - will be replaced on client
+const DEFAULT_USER: Participant = { id: "", name: "Anonymous" };
+
+// ============ User Helpers ============
+function getOrCreateStoredUser(): Participant {
+  const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed.id && parsed.name) {
+        return parsed;
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  const newUser: Participant = {
+    id: generateId(),
+    name: "Anonymous",
+  };
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newUser));
+  return newUser;
+}
+
+function saveUser(user: Participant): void {
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(user));
+}
+
 // ============ Hook ============
 export function useWebRTC(roomId: string): UseWebRTCReturn {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("disconnected");
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [localUser, setLocalUser] = useState<Participant>(DEFAULT_USER);
+  const [peer, setPeer] = useState<Participant | null>(null);
+
+  // Hydrate local user from localStorage on mount
+  useEffect(() => {
+    const storedUser = getOrCreateStoredUser();
+    setLocalUser(storedUser);
+  }, []);
 
   // Refs for mutable values that shouldn't trigger re-renders
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+
+  // Ref to access latest localUser in callbacks
+  const localUserRef = useRef<Participant>(localUser);
+  useEffect(() => {
+    localUserRef.current = localUser;
+  }, [localUser]);
 
   // ============ Data Channel Setup ============
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
@@ -75,11 +135,19 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       console.log("[DataChannel] Opened - P2P connection established");
       setConnectionState("connected");
       setError(null);
+
+      // Send our user info to peer
+      const userInfoMessage: DataChannelMessage = {
+        type: "user-info",
+        user: localUserRef.current,
+      };
+      channel.send(JSON.stringify(userInfoMessage));
     };
 
     channel.onclose = () => {
       console.log("[DataChannel] Closed");
       setConnectionState("waiting");
+      setPeer(null);
     };
 
     channel.onerror = (event) => {
@@ -89,16 +157,38 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
 
     channel.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            content: data.content,
-            sender: "peer",
-            timestamp: new Date(data.timestamp),
-          },
-        ]);
+        const data: DataChannelMessage = JSON.parse(event.data);
+
+        switch (data.type) {
+          case "chat":
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: generateId(),
+                content: data.content,
+                senderId: "peer",
+                senderName: "peer",
+                timestamp: new Date(data.timestamp),
+              },
+            ]);
+            break;
+
+          case "user-info":
+          case "user-update":
+            console.log("[DataChannel] Received user info:", data.user);
+            setPeer(data.user);
+            // Update sender names in existing messages from this peer
+            if (data.type === "user-update") {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.senderId === "peer"
+                    ? { ...msg, senderName: data.user.name }
+                    : msg,
+                ),
+              );
+            }
+            break;
+        }
       } catch (e) {
         console.error("[DataChannel] Failed to parse message:", e);
       }
@@ -157,7 +247,8 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       return;
     }
 
-    const message = {
+    const message: DataChannelMessage = {
+      type: "chat",
       content,
       timestamp: new Date().toISOString(),
     };
@@ -170,7 +261,8 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
         {
           id: generateId(),
           content,
-          sender: "me",
+          senderId: localUserRef.current.id,
+          senderName: localUserRef.current.name,
           timestamp: new Date(),
         },
       ]);
@@ -178,6 +270,32 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       console.error("[SendMessage] Failed:", e);
       setError("Failed to send message");
     }
+  }, []);
+
+  // ============ Update Local User Name ============
+  const updateLocalUserName = useCallback((name: string) => {
+    const updatedUser: Participant = { ...localUserRef.current, name };
+    setLocalUser(updatedUser);
+    saveUser(updatedUser);
+
+    // Notify peer of name change
+    const channel = dataChannelRef.current;
+    if (channel && channel.readyState === "open") {
+      const updateMessage: DataChannelMessage = {
+        type: "user-update",
+        user: updatedUser,
+      };
+      channel.send(JSON.stringify(updateMessage));
+    }
+
+    // Update our own messages with new name
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.senderId === localUserRef.current.id
+          ? { ...msg, senderName: name }
+          : msg,
+      ),
+    );
   }, []);
 
   // ============ Main Effect ============
@@ -339,5 +457,8 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     messages,
     sendMessage,
     error,
+    localUser,
+    peer,
+    updateLocalUserName,
   };
 }
