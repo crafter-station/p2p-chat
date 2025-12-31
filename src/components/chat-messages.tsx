@@ -10,21 +10,39 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ messages, localUserId }: ChatMessagesProps) {
-  // Use a callback ref to scroll on each render when messages change
   const scrollRef = useCallback((node: HTMLDivElement | null) => {
     node?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center text-gray-500">
-        <p>No messages yet. Say hello!</p>
+      <div className="flex h-full flex-col items-center justify-center text-center">
+        <div className="mb-4 rounded-full bg-muted p-4">
+          <svg
+            className="h-8 w-8 text-muted-foreground"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+            />
+          </svg>
+        </div>
+        <p className="text-lg font-medium text-foreground">No messages yet</p>
+        <p className="text-sm text-muted-foreground">
+          Say hello to start the conversation!
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 space-y-3 overflow-y-auto p-4">
+    <div className="flex h-full flex-col space-y-3 overflow-y-auto py-4">
       {messages.map((msg) => {
         const isMe = msg.senderId === localUserId;
         return (
@@ -34,17 +52,21 @@ export function ChatMessages({ messages, localUserId }: ChatMessagesProps) {
           >
             <Avatar name={msg.senderName} isLocal={isMe} size="sm" />
             <div
-              className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+              className={`max-w-[75%] rounded-2xl px-4 py-2 shadow-sm ${
                 isMe
-                  ? "rounded-br-md bg-blue-600 text-white"
-                  : "rounded-bl-md bg-gray-700 text-white"
+                  ? "rounded-br-md bg-primary text-primary-foreground"
+                  : "rounded-bl-md bg-card text-card-foreground border border-border"
               }`}
             >
-              <p className="text-xs font-medium opacity-75">{msg.senderName}</p>
+              <p
+                className={`text-xs font-medium ${isMe ? "opacity-80" : "text-muted-foreground"}`}
+              >
+                {msg.senderName}
+              </p>
               <p className="break-words">{msg.content}</p>
               <p
                 className={`mt-1 text-xs ${
-                  isMe ? "text-blue-200" : "text-gray-400"
+                  isMe ? "opacity-70" : "text-muted-foreground"
                 }`}
               >
                 {msg.timestamp.toLocaleTimeString([], {
@@ -56,7 +78,6 @@ export function ChatMessages({ messages, localUserId }: ChatMessagesProps) {
           </div>
         );
       })}
-      {/* Key forces re-render on message count change to trigger scroll */}
       <div key={messages.length} ref={scrollRef} />
     </div>
   );

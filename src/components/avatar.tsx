@@ -5,9 +5,9 @@ interface AvatarProps {
 }
 
 const sizeClasses = {
-  sm: "h-6 w-6 text-xs",
-  md: "h-8 w-8 text-sm",
-  lg: "h-10 w-10 text-base",
+  sm: "h-7 w-7 text-xs",
+  md: "h-9 w-9 text-sm",
+  lg: "h-11 w-11 text-base",
 };
 
 export function Avatar({ name, isLocal = false, size = "md" }: AvatarProps) {
@@ -15,8 +15,10 @@ export function Avatar({ name, isLocal = false, size = "md" }: AvatarProps) {
 
   return (
     <div
-      className={`flex items-center justify-center rounded-full font-medium ${sizeClasses[size]} ${
-        isLocal ? "bg-blue-600 text-white" : "bg-gray-600 text-gray-200"
+      className={`flex items-center justify-center rounded-full font-medium shadow-sm ${sizeClasses[size]} ${
+        isLocal
+          ? "bg-primary text-primary-foreground"
+          : "bg-secondary text-secondary-foreground"
       }`}
     >
       {firstLetter}
