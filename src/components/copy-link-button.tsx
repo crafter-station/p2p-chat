@@ -15,7 +15,8 @@ export function CopyLinkButton() {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:gap-2 sm:px-3 sm:text-sm"
+      title={copied ? "Copied!" : "Copy room link"}
     >
       {copied ? (
         <>
@@ -33,7 +34,7 @@ export function CopyLinkButton() {
               d="M5 13l4 4L19 7"
             />
           </svg>
-          Copied!
+          <span className="hidden sm:inline">Copied!</span>
         </>
       ) : (
         <>
@@ -51,7 +52,7 @@ export function CopyLinkButton() {
               d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
             />
           </svg>
-          Copy Link
+          <span className="hidden sm:inline">Copy Link</span>
         </>
       )}
     </button>
