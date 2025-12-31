@@ -12,7 +12,7 @@ export function Navbar() {
         </Link>
         <nav className="flex items-center gap-4">
           <a
-            href="https://github.com"
+            href="https://github.com/crafter-station/p2p-chat"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-muted-foreground transition-colors hover:text-foreground"
