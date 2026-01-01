@@ -38,30 +38,37 @@ export default function Home() {
       <main className="flex flex-1 flex-col">
         {/* Hero Section */}
         <section className="relative overflow-hidden border-b border-border">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/10" />
-          <div className="relative mx-auto max-w-4xl px-4 py-20 text-center">
-            <div className="mb-6 flex justify-center">
-              <div className="rounded-2xl bg-card p-4 shadow-lg">
-                <CrafterLogo className="h-16 w-16" />
+          {/* Gradient background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5" />
+          {/* Animated glow orbs */}
+          <div className="pointer-events-none absolute -top-40 left-1/4 h-80 w-80 rounded-full bg-primary/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-40 right-1/4 h-80 w-80 rounded-full bg-primary/15 blur-3xl" />
+
+          <div className="relative mx-auto max-w-4xl px-4 py-24 text-center sm:py-32">
+            <div className="mb-8 flex justify-center">
+              <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-card to-card/80 p-5 shadow-xl shadow-primary/10">
+                <CrafterLogo className="h-16 w-16 text-primary" />
               </div>
             </div>
-            <h1 className="mb-4 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            <h1 className="mb-6 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
               Private conversations,
               <br />
-              <span className="text-primary">crafted with care</span>
+              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                crafted with care
+              </span>
             </h1>
-            <p className="mx-auto mb-8 max-w-2xl text-lg text-muted-foreground">
+            <p className="mx-auto mb-10 max-w-2xl text-lg text-muted-foreground sm:text-xl">
               Crafter Chat connects you directly with others using peer-to-peer
               technology. Your messages never touch our servers.{" "}
-              <span className="font-medium text-foreground">
+              <span className="font-semibold text-foreground">
                 No accounts. No tracking. Just chat.
               </span>
             </p>
-            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
               <button
                 type="button"
                 onClick={handleCreateRoom}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-medium text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                className="inline-flex h-14 items-center justify-center gap-2 rounded-xl bg-primary px-10 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:scale-105 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
               >
                 <svg
                   className="h-5 w-5"
@@ -86,12 +93,12 @@ export default function Home() {
                   value={joinRoomId}
                   onChange={(e) => setJoinRoomId(e.target.value)}
                   placeholder="Paste room link or ID"
-                  className="h-12 w-64 rounded-lg border border-border bg-card px-4 text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+                  className="h-14 w-64 rounded-xl border border-border bg-card/50 px-4 text-foreground backdrop-blur-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
                   type="submit"
                   disabled={!joinRoomId.trim()}
-                  className="inline-flex h-12 items-center justify-center rounded-lg bg-muted px-6 font-medium text-foreground transition-colors hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-14 items-center justify-center rounded-xl border border-border bg-secondary px-6 font-semibold text-secondary-foreground transition-all hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Join
                 </button>
@@ -101,12 +108,15 @@ export default function Home() {
         </section>
 
         {/* Features Section */}
-        <section className="py-16">
-          <div className="mx-auto max-w-4xl px-4">
-            <h2 className="mb-12 text-center text-2xl font-semibold text-foreground">
+        <section className="py-20">
+          <div className="mx-auto max-w-5xl px-4">
+            <h2 className="mb-4 text-center text-3xl font-bold text-foreground">
               Why Crafter Chat?
             </h2>
-            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            <p className="mx-auto mb-12 max-w-2xl text-center text-muted-foreground">
+              Built for privacy-first communication with modern web standards
+            </p>
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               <FeatureCard
                 icon={
                   <svg
@@ -237,11 +247,14 @@ export default function Home() {
         </section>
 
         {/* How It Works Section */}
-        <section className="border-t border-border bg-muted/30 py-16">
+        <section className="border-t border-border bg-gradient-to-b from-muted/30 to-transparent py-20">
           <div className="mx-auto max-w-4xl px-4">
-            <h2 className="mb-12 text-center text-2xl font-semibold text-foreground">
+            <h2 className="mb-4 text-center text-3xl font-bold text-foreground">
               How It Works
             </h2>
+            <p className="mx-auto mb-12 max-w-xl text-center text-muted-foreground">
+              Get started in seconds with three simple steps
+            </p>
             <div className="flex flex-col gap-8 md:flex-row md:gap-4">
               <Step
                 number={1}
@@ -265,18 +278,19 @@ export default function Home() {
         </section>
 
         {/* CTA Section */}
-        <section className="py-16">
-          <div className="mx-auto max-w-4xl px-4 text-center">
-            <h2 className="mb-4 text-2xl font-semibold text-foreground">
+        <section className="relative overflow-hidden py-20">
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent" />
+          <div className="relative mx-auto max-w-4xl px-4 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-foreground">
               Ready to chat privately?
             </h2>
-            <p className="mb-8 text-muted-foreground">
+            <p className="mb-8 text-lg text-muted-foreground">
               No signup required. Start a conversation in seconds.
             </p>
             <button
               type="button"
               onClick={handleCreateRoom}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-primary px-8 text-base font-medium text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              className="inline-flex h-14 items-center justify-center gap-2 rounded-xl bg-primary px-10 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:scale-105 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
             >
               Start New Chat
             </button>
@@ -304,8 +318,8 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm transition-shadow hover:shadow-md">
-      <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3 text-primary">
+    <div className="group rounded-xl border border-border bg-card/50 p-6 backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card hover:shadow-lg hover:shadow-primary/5">
+      <div className="mb-4 inline-flex rounded-xl bg-primary/10 p-3 text-primary transition-colors group-hover:bg-primary/20">
         {icon}
       </div>
       <h3 className="mb-2 font-semibold text-foreground">{title}</h3>
@@ -327,7 +341,7 @@ function Step({
 }) {
   return (
     <div className="flex flex-1 flex-col items-center text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-xl font-bold text-primary-foreground shadow-lg shadow-primary/25">
         {number}
       </div>
       <h3 className="mb-2 font-semibold text-foreground">{title}</h3>
