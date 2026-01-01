@@ -121,6 +121,21 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
+  // Track current peer's socket ID for proper cleanup and signaling
+  const currentPeerIdRef = useRef<string | null>(null);
+
+  // Track if we've already joined to prevent duplicate joins on socket reconnect
+  const hasJoinedRef = useRef<boolean>(false);
+
+  // Mounted flag to prevent state updates after unmount
+  const isMountedRef = useRef<boolean>(true);
+
+  // For polite peer pattern: determines who yields on glare (simultaneous offers)
+  // The peer with the "lower" socket ID is the "polite" peer and will rollback
+  const isPoliteRef = useRef<boolean>(false);
+  const makingOfferRef = useRef<boolean>(false);
+  const ignoreOfferRef = useRef<boolean>(false);
+
   // Ref to access latest localUser in callbacks
   const localUserRef = useRef<Participant>(localUser);
   useEffect(() => {
@@ -133,11 +148,40 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     peerRef.current = peer;
   }, [peer]);
 
+  // ============ Cleanup Helper ============
+  const cleanupPeerConnection = useCallback(() => {
+    console.log("[Cleanup] Cleaning up peer connection");
+
+    if (dataChannelRef.current) {
+      dataChannelRef.current.onopen = null;
+      dataChannelRef.current.onclose = null;
+      dataChannelRef.current.onerror = null;
+      dataChannelRef.current.onmessage = null;
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.ondatachannel = null;
+      peerConnectionRef.current.onnegotiationneeded = null;
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    pendingCandidatesRef.current = [];
+    currentPeerIdRef.current = null;
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
+  }, []);
+
   // ============ Data Channel Setup ============
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
     dataChannelRef.current = channel;
 
     channel.onopen = () => {
+      if (!isMountedRef.current) return;
       console.log("[DataChannel] Opened - P2P connection established");
       setConnectionState("connected");
       setError(null);
@@ -151,17 +195,19 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     };
 
     channel.onclose = () => {
+      if (!isMountedRef.current) return;
       console.log("[DataChannel] Closed");
-      setConnectionState("waiting");
-      setPeer(null);
+      // Don't immediately transition - wait for peer-left or reconnection
     };
 
     channel.onerror = (event) => {
+      if (!isMountedRef.current) return;
       console.error("[DataChannel] Error:", event);
       setError("Connection error. Please try again.");
     };
 
     channel.onmessage = (event) => {
+      if (!isMountedRef.current) return;
       try {
         const data: DataChannelMessage = JSON.parse(event.data);
 
@@ -207,31 +253,50 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     (peerId: string) => {
       console.log("[WebRTC] Creating peer connection for:", peerId);
 
+      // Clean up any existing connection first
+      cleanupPeerConnection();
+
+      currentPeerIdRef.current = peerId;
+
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peerConnectionRef.current = pc;
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && currentPeerIdRef.current) {
           console.log("[WebRTC] Sending ICE candidate");
           socketRef.current?.emit("ice-candidate", {
-            to: peerId,
+            to: currentPeerIdRef.current,
             candidate: event.candidate.toJSON(),
           });
         }
       };
 
       pc.oniceconnectionstatechange = () => {
+        if (!isMountedRef.current) return;
         console.log("[WebRTC] ICE state:", pc.iceConnectionState);
 
-        if (pc.iceConnectionState === "failed") {
-          setError(
-            "Connection failed. You may need a different network or TURN server.",
-          );
-          setConnectionState("waiting");
-        }
+        switch (pc.iceConnectionState) {
+          case "failed":
+            setError(
+              "Connection failed. You may need a different network or TURN server.",
+            );
+            setConnectionState("waiting");
+            cleanupPeerConnection();
+            setPeer(null);
+            break;
 
-        if (pc.iceConnectionState === "disconnected") {
-          setConnectionState("waiting");
+          case "disconnected":
+            // ICE disconnected - peer may have left or network issue
+            // Don't immediately cleanup, wait for reconnection or peer-left
+            console.log("[WebRTC] ICE disconnected - waiting for recovery");
+            break;
+
+          case "closed":
+            if (isMountedRef.current) {
+              setConnectionState("waiting");
+              setPeer(null);
+            }
+            break;
         }
       };
 
@@ -242,7 +307,7 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
 
       return pc;
     },
-    [setupDataChannel],
+    [cleanupPeerConnection, setupDataChannel],
   );
 
   // ============ Send Message ============
@@ -309,6 +374,9 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
   useEffect(() => {
     if (!roomId) return;
 
+    isMountedRef.current = true;
+    hasJoinedRef.current = false;
+
     console.log("[Init] Connecting to signaling server...");
     setConnectionState("connecting");
 
@@ -316,22 +384,39 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
     socketRef.current = socket;
 
     // --- Socket Events ---
     socket.on("connect", () => {
-      console.log("[Socket] Connected, joining room:", roomId);
-      socket.emit("join-room", roomId);
+      if (!isMountedRef.current) return;
+      console.log("[Socket] Connected, socket id:", socket.id);
+
+      // Prevent duplicate joins on reconnection
+      if (!hasJoinedRef.current) {
+        console.log("[Socket] Joining room:", roomId);
+        socket.emit("join-room", roomId);
+        hasJoinedRef.current = true;
+      } else {
+        // On reconnection, rejoin the room
+        console.log("[Socket] Reconnected, rejoining room:", roomId);
+        // Clean up existing connection as peer IDs will change
+        cleanupPeerConnection();
+        setPeer(null);
+        socket.emit("join-room", roomId);
+      }
     });
 
     socket.on("connect_error", (err) => {
+      if (!isMountedRef.current) return;
       console.error("[Socket] Connection error:", err);
       setError("Cannot connect to server. Please try again.");
       setConnectionState("disconnected");
     });
 
     socket.on("room-joined", async ({ peers }) => {
+      if (!isMountedRef.current) return;
       console.log("[Room] Joined. Peers:", peers);
 
       if (peers.length === 0) {
@@ -343,6 +428,16 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       setConnectionState("signaling");
       const peerId = peers[0]; // For MVP, only handle 1 peer
 
+      // Determine politeness: lower socket ID is polite
+      // This is used for handling glare (simultaneous offers)
+      const socketId = socket.id ?? "";
+      isPoliteRef.current = socketId < peerId;
+      console.log(
+        "[WebRTC] We are the",
+        isPoliteRef.current ? "polite" : "impolite",
+        "peer",
+      );
+
       const pc = createPeerConnection(peerId);
 
       // Create data channel (only initiator creates it)
@@ -351,6 +446,7 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
 
       // Create and send offer
       try {
+        makingOfferRef.current = true;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -360,35 +456,92 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
         });
       } catch (e) {
         console.error("[WebRTC] Failed to create offer:", e);
-        setError("Failed to initiate connection");
+        if (isMountedRef.current) {
+          setError("Failed to initiate connection");
+        }
+      } finally {
+        makingOfferRef.current = false;
       }
     });
 
     socket.on("peer-joined", ({ peerId }) => {
+      if (!isMountedRef.current) return;
       console.log("[Room] Peer joined:", peerId);
+
+      // Clean up any existing connection before new peer
+      cleanupPeerConnection();
+      setPeer(null);
+
       setConnectionState("signaling");
+
+      // Determine politeness for glare handling
+      const socketId = socket.id ?? "";
+      isPoliteRef.current = socketId < peerId;
+      console.log(
+        "[WebRTC] We are the",
+        isPoliteRef.current ? "polite" : "impolite",
+        "peer",
+      );
 
       // New peer will send us an offer, so just prepare
       createPeerConnection(peerId);
     });
 
     socket.on("signal", async ({ from, signal }) => {
+      if (!isMountedRef.current) return;
       console.log("[Signal] Received", signal.type, "from:", from);
 
       let pc = peerConnectionRef.current;
 
+      // Verify the signal is from our current peer
+      if (currentPeerIdRef.current && currentPeerIdRef.current !== from) {
+        console.warn(
+          "[Signal] Ignoring signal from unknown peer:",
+          from,
+          "expected:",
+          currentPeerIdRef.current,
+        );
+        return;
+      }
+
       if (signal.type === "offer") {
+        // Handle glare (simultaneous offers) using polite peer pattern
+        const offerCollision =
+          makingOfferRef.current ||
+          (pc?.signalingState !== "stable" && pc?.signalingState !== undefined);
+
+        ignoreOfferRef.current = !isPoliteRef.current && offerCollision;
+
+        if (ignoreOfferRef.current) {
+          console.log(
+            "[WebRTC] Ignoring offer due to glare (we are impolite peer)",
+          );
+          return;
+        }
+
         // We received an offer, create answer
         if (!pc) {
           pc = createPeerConnection(from);
         }
 
         try {
+          // If we're the polite peer and there's a collision, rollback
+          if (offerCollision && isPoliteRef.current) {
+            console.log(
+              "[WebRTC] Rolling back local description (polite peer)",
+            );
+            await pc.setLocalDescription({ type: "rollback" });
+          }
+
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
 
           // Add any pending ICE candidates
           for (const candidate of pendingCandidatesRef.current) {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn("[WebRTC] Failed to add pending ICE candidate:", e);
+            }
           }
           pendingCandidatesRef.current = [];
 
@@ -401,16 +554,38 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
           });
         } catch (e) {
           console.error("[WebRTC] Failed to handle offer:", e);
-          setError("Connection negotiation failed");
+          if (isMountedRef.current) {
+            setError("Connection negotiation failed");
+          }
         }
       } else if (signal.type === "answer") {
         // We received an answer to our offer
+        if (!pc) {
+          console.warn(
+            "[WebRTC] Received answer but no peer connection exists",
+          );
+          return;
+        }
+
+        // Check signaling state before setting remote description
+        if (pc.signalingState !== "have-local-offer") {
+          console.warn(
+            "[WebRTC] Received answer in unexpected state:",
+            pc.signalingState,
+          );
+          return;
+        }
+
         try {
-          await pc?.setRemoteDescription(new RTCSessionDescription(signal));
+          await pc.setRemoteDescription(new RTCSessionDescription(signal));
 
           // Add any pending ICE candidates
           for (const candidate of pendingCandidatesRef.current) {
-            await pc?.addIceCandidate(new RTCIceCandidate(candidate));
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn("[WebRTC] Failed to add pending ICE candidate:", e);
+            }
           }
           pendingCandidatesRef.current = [];
         } catch (e) {
@@ -419,14 +594,30 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
       }
     });
 
-    socket.on("ice-candidate", async ({ candidate }) => {
+    socket.on("ice-candidate", async ({ from, candidate }) => {
+      if (!isMountedRef.current) return;
+
+      // Verify the candidate is from our current peer
+      if (currentPeerIdRef.current && currentPeerIdRef.current !== from) {
+        console.warn(
+          "[ICE] Ignoring candidate from unknown peer:",
+          from,
+          "expected:",
+          currentPeerIdRef.current,
+        );
+        return;
+      }
+
       const pc = peerConnectionRef.current;
 
-      if (pc?.remoteDescription) {
+      if (pc?.remoteDescription?.type) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
-          console.error("[WebRTC] Failed to add ICE candidate:", e);
+          // Ignore errors for candidates that arrive after connection is established
+          if (pc.iceConnectionState !== "connected") {
+            console.warn("[WebRTC] Failed to add ICE candidate:", e);
+          }
         }
       } else {
         // Queue candidate if we don't have remote description yet
@@ -435,29 +626,28 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     });
 
     socket.on("peer-left", ({ peerId }) => {
+      if (!isMountedRef.current) return;
       console.log("[Room] Peer left:", peerId);
-      setConnectionState("waiting");
 
-      // Cleanup
-      dataChannelRef.current?.close();
-      peerConnectionRef.current?.close();
-      dataChannelRef.current = null;
-      peerConnectionRef.current = null;
+      // Only cleanup if it's our current peer
+      if (currentPeerIdRef.current === peerId) {
+        cleanupPeerConnection();
+        setPeer(null);
+        setConnectionState("waiting");
+      }
     });
 
     // --- Cleanup ---
     return () => {
       console.log("[Cleanup] Disconnecting...");
-      dataChannelRef.current?.close();
-      peerConnectionRef.current?.close();
-      socket.disconnect();
+      isMountedRef.current = false;
+      hasJoinedRef.current = false;
 
-      dataChannelRef.current = null;
-      peerConnectionRef.current = null;
+      cleanupPeerConnection();
+      socket.disconnect();
       socketRef.current = null;
-      pendingCandidatesRef.current = [];
     };
-  }, [roomId, createPeerConnection, setupDataChannel]);
+  }, [roomId, createPeerConnection, setupDataChannel, cleanupPeerConnection]);
 
   return {
     connectionState,
