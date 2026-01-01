@@ -40,7 +40,8 @@ export function ConnectionStatus({ state, error }: ConnectionStatusProps) {
   const { colorClass, text, shortText } = statusConfig[state];
 
   // Truncate error message on mobile
-  const shortError = error && error.length > 20 ? `${error.slice(0, 20)}...` : error;
+  const shortError =
+    error && error.length > 20 ? `${error.slice(0, 20)}...` : error;
 
   return (
     <div className="flex items-center gap-1.5">

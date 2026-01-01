@@ -31,6 +31,13 @@ export default function ChatRoom({ params }: ChatRoomProps) {
   const [editName, setEditName] = useState(localUser.name);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Sync editName when localUser hydrates from localStorage
+  useEffect(() => {
+    if (!isEditing) {
+      setEditName(localUser.name);
+    }
+  }, [localUser.name, isEditing]);
+
   useEffect(() => {
     if (isEditing) {
       inputRef.current?.focus();

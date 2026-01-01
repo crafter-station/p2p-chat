@@ -127,6 +127,12 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
     localUserRef.current = localUser;
   }, [localUser]);
 
+  // Ref to access latest peer in callbacks
+  const peerRef = useRef<Participant | null>(peer);
+  useEffect(() => {
+    peerRef.current = peer;
+  }, [peer]);
+
   // ============ Data Channel Setup ============
   const setupDataChannel = useCallback((channel: RTCDataChannel) => {
     dataChannelRef.current = channel;
@@ -161,13 +167,14 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
 
         switch (data.type) {
           case "chat":
+            // Use peer's actual name from ref, fallback to "peer" if not yet received
             setMessages((prev) => [
               ...prev,
               {
                 id: generateId(),
                 content: data.content,
                 senderId: "peer",
-                senderName: "peer",
+                senderName: peerRef.current?.name ?? "peer",
                 timestamp: new Date(data.timestamp),
               },
             ]);
@@ -178,15 +185,15 @@ export function useWebRTC(roomId: string): UseWebRTCReturn {
             console.log("[DataChannel] Received user info:", data.user);
             setPeer(data.user);
             // Update sender names in existing messages from this peer
-            if (data.type === "user-update") {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.senderId === "peer"
-                    ? { ...msg, senderName: data.user.name }
-                    : msg,
-                ),
-              );
-            }
+            // Do this for both user-info and user-update to handle messages
+            // that arrived before we received peer info
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.senderId === "peer"
+                  ? { ...msg, senderName: data.user.name }
+                  : msg,
+              ),
+            );
             break;
         }
       } catch (e) {
